@@ -1,17 +1,15 @@
 package com.camilli;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.File;
+import java.util.Scanner;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfInt;
-import org.opencv.core.MatOfInt4;
-import org.opencv.core.MatOfPoint;
-import org.opencv.core.Point;
+import org.opencv.core.Point; // <--- FALTAVA ESTA LINHA
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
 import org.opencv.highgui.HighGui;
@@ -22,18 +20,29 @@ public class App {
     public static void main(String[] args) {
         OpenCV.loadLocally();
         
+        // Criar pasta para salvar as imagens se não existir
+        File pastaDataset = new File("dataset_libras");
+        if (!pastaDataset.exists()) {
+            pastaDataset.mkdir();
+        }
+
         VideoCapture camera = new VideoCapture(0);
         if (!camera.isOpened()) return;
 
         Rect retanguloArea = new Rect(300, 50, 300, 300);
-        
         Mat frame = new Mat();
         Mat imagemCinza = new Mat();
         Mat imagemDesfocada = new Mat();
         Mat imagemBinaria = new Mat();
+        Mat imagemSalvar = new Mat(); 
 
-        List<MatOfPoint> contornos = new ArrayList<>();
-        Mat hierarquia = new Mat();
+        Scanner scanner = new Scanner(System.in);
+        int contadorFotos = 0;
+
+        System.out.println("--- MODO GRAVAÇÃO DE DATASET ---");
+        System.out.println("1. Posicione a mão no quadrado.");
+        System.out.println("2. Aperte 'S' no teclado para salvar.");
+        System.out.println("3. Digite o nome da letra no terminal.");
 
         while (camera.read(frame)) {
             Core.flip(frame, frame, 1);
@@ -43,67 +52,39 @@ public class App {
             Imgproc.GaussianBlur(imagemCinza, imagemDesfocada, new Size(5, 5), 0);
             Imgproc.threshold(imagemDesfocada, imagemBinaria, 0, 255, Imgproc.THRESH_BINARY_INV + Imgproc.THRESH_OTSU);
 
-            contornos.clear();
-            Imgproc.findContours(imagemBinaria, contornos, hierarquia, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+            Imgproc.resize(imagemBinaria, imagemSalvar, new Size(50, 50));
 
-            int indiceMaiorContorno = -1;
-            double maiorArea = 0;
+            Imgproc.rectangle(frame, retanguloArea, new Scalar(0, 255, 0), 2);
+            // Agora esta linha vai funcionar:
+            Imgproc.putText(frame, "Aperte 'S' para salvar", new Point(10, 50), 1, 1.5, new Scalar(0, 255, 255), 2);
 
-            for (int i = 0; i < contornos.size(); i++) {
-                double area = Imgproc.contourArea(contornos.get(i));
-                if (area > maiorArea) {
-                    maiorArea = area;
-                    indiceMaiorContorno = i;
-                }
-            }
-
-            if (indiceMaiorContorno != -1) {
-                MatOfPoint maoDetectada = contornos.get(indiceMaiorContorno);
-                
-                Imgproc.drawContours(frame, contornos, indiceMaiorContorno, new Scalar(255, 0, 0), 2, 8, hierarquia, 0, new Point(retanguloArea.x, retanguloArea.y));
-
-                MatOfInt hullInt = new MatOfInt();
-                Imgproc.convexHull(maoDetectada, hullInt);
-
-                if (hullInt.toArray().length > 3) {
-                    MatOfInt4 defeitos = new MatOfInt4();
-                    Imgproc.convexityDefects(maoDetectada, hullInt, defeitos);
-
-                    int contagemDedos = 0;
-                    List<Integer> dadosDefeitos = defeitos.toList();
-
-                    for (int i = 0; i < dadosDefeitos.size(); i += 4) {
-                        Point end = maoDetectada.toList().get(dadosDefeitos.get(i + 1));
-                        Point far = maoDetectada.toList().get(dadosDefeitos.get(i + 2));
-                        float depth = dadosDefeitos.get(i + 3) / 256.0f;
-
-                        if (depth > 20) { 
-                            contagemDedos++;
-                            Point pF = new Point(far.x + retanguloArea.x, far.y + retanguloArea.y);
-                            Imgproc.circle(frame, pF, 4, new Scalar(0, 0, 255), -1);
-                        }
-                    }
-                    
-                    String mensagem = (contagemDedos == 0) ? "1 Dedo / Fechada" : (contagemDedos + 1) + " Dedos";
-                    Imgproc.putText(frame, mensagem, new Point(50, 50), Imgproc.FONT_HERSHEY_SIMPLEX, 1.5, new Scalar(0, 255, 255), 2);
-                }
-            }
-
-            Imgproc.rectangle(frame, retanguloArea, new Scalar(0, 255, 0), 1);
-            
             Mat visualizacao = new Mat();
             Imgproc.cvtColor(imagemBinaria, visualizacao, Imgproc.COLOR_GRAY2BGR);
-            Mat redimensionada = new Mat();
-            Imgproc.resize(visualizacao, redimensionada, new Size(150, 150));
-            redimensionada.copyTo(frame.submat(new Rect(10, 80, 150, 150)));
+            Imgproc.resize(visualizacao, visualizacao, new Size(150, 150));
+            visualizacao.copyTo(frame.submat(new Rect(10, 100, 150, 150)));
 
-            HighGui.imshow("Tradutor LIBRAS", frame);
+            HighGui.imshow("Gravador de LIBRAS", frame);
 
-            if (HighGui.waitKey(30) == 27) break;
+            int tecla = HighGui.waitKey(30);
+            
+            if (tecla == 27) break; // ESC para sair
+
+            if (tecla == 's' || tecla == 'S') {
+                System.out.print("Qual letra é essa? (Digite e dê Enter): ");
+                String nomeLetra = scanner.next();
+                
+                // Salva com nome único usando o tempo do sistema
+                String nomeArquivo = "dataset_libras/" + nomeLetra + "_" + System.currentTimeMillis() + ".png";
+                Imgcodecs.imwrite(nomeArquivo, imagemSalvar);
+                
+                System.out.println("Salvo: " + nomeArquivo);
+                contadorFotos++;
+            }
         }
 
         camera.release();
         HighGui.destroyAllWindows();
+        scanner.close();
         System.exit(0);
     }
 }
